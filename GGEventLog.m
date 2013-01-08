@@ -349,6 +349,16 @@ static GGLocationManagerDelegate *locationManagerDelegate;
     [GGEventLog logEvent:eventType withCustomProperties:nil];
 }
 
++ (void)logEvent:(NSString *)eventType withParameters:(NSDictionary *)parameters
+{
+    [GGEventLog logEvent:eventType withCustomProperties:parameters];
+}
+
++ (void)logEvent:(NSString *)eventType withParameters:(NSDictionary *)parameters timed:(BOOL)timed
+{
+    [GGEventLog logEvent:eventType withParameters:parameters];
+}
+
 + (void)logEvent:(NSString*) eventType withCustomProperties:(NSDictionary*) customProperties
 {
     if (![GGEventLog isArgument:eventType validType:[NSString class] methodName:@"logEvent:withCustomProperties:"]) {
