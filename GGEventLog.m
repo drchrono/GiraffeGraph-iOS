@@ -359,6 +359,11 @@ static GGLocationManagerDelegate *locationManagerDelegate;
     [GGEventLog logEvent:eventType withParameters:parameters];
 }
 
++ (void)endTimedEvent:(NSString *)eventType withParameters:(NSDictionary *)parameters
+{
+    [GGEventLog logEvent:eventType withParameters:parameters];
+}
+
 + (void)logEvent:(NSString*) eventType withCustomProperties:(NSDictionary*) customProperties
 {
     if (![GGEventLog isArgument:eventType validType:[NSString class] methodName:@"logEvent:withCustomProperties:"]) {

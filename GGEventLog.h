@@ -28,6 +28,8 @@
 
 + (void)logEvent:(NSString*) eventType withParameters:(NSDictionary *)parameters timed:(BOOL)timed;
 
++ (void)endTimedEvent:(NSString *)eventType withParameters:(NSDictionary *)parameters;
+
 + (void)logEvent:(NSString*) eventType withCustomProperties:(NSDictionary*) customProperties;
 
 + (void)uploadEvents;
