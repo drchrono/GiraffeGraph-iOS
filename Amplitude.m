@@ -8,8 +8,6 @@
 
 #import "Amplitude.h"
 #import "AmplitudeLocationManagerDelegate.h"
-#import "AmplitudeCJSONSerializer.h"
-#import "AmplitudeCJSONDeserializer.h"
 #import "AmplitudeARCMacros.h"
 #import <math.h>
 #import <sys/socket.h>
@@ -76,8 +74,6 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
     [backgroundQueue setSuspended:YES];
     
     [initializerQueue addOperationWithBlock:^{
-        
-        _deviceId = SAFE_ARC_RETAIN([Amplitude getDeviceId]);
         
         _versionName = SAFE_ARC_RETAIN([[[NSBundle mainBundle] infoDictionary] valueForKey:@"CFBundleShortVersionString"]);
         
@@ -235,6 +231,14 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
     [backgroundQueue addOperationWithBlock:^{
         
         @synchronized (eventsData) {
+            if (_deviceId == nil) {
+                _deviceId = SAFE_ARC_RETAIN([eventsData objectForKey:@"device_id"]);
+                if (_deviceId == nil) {
+                    _deviceId = SAFE_ARC_RETAIN([Amplitude getDeviceId]);
+                    [eventsData setObject:_deviceId forKey:@"device_id"];
+                }
+            }
+            
             if (userId != nil) {
                 (void) SAFE_ARC_RETAIN(userId);
                 SAFE_ARC_RELEASE(_userId);
@@ -315,9 +319,9 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
         [fingerprint setObject:[Amplitude replaceWithJSONNull:_phoneCarrier] forKey:@"carrier"];
         
         NSError *error = nil;
-        NSData *fingerprintData = [[AmplitudeCJSONSerializer serializer] serializeDictionary:fingerprint error:&error];
+        NSData *fingerprintData = [NSJSONSerialization dataWithJSONObject:fingerprint options:0 error:&error];
         if (error != nil) {
-            NSLog(@"ERROR: JSONSerializer error: %@", error);
+            NSLog(@"ERROR: NSJSONSerialization error: %@", error);
             isCurrentlyTrackingCampaign = NO;
             return;
         }
@@ -351,7 +355,7 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
          if (response != nil) {
              if ([httpResponse statusCode] == 200) {
                  NSError *error = nil;
-                 NSDictionary *result = [[AmplitudeCJSONDeserializer deserializer] deserialize:data error:&error];
+                 NSDictionary *result = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
                  
                  if (error != nil) {
                      NSLog(@"ERROR: Deserialization error:%@", error);
@@ -399,7 +403,7 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
     }
     
     NSError *error = nil;
-    NSDictionary *result = [[AmplitudeCJSONDeserializer deserializer] deserialize:[_campaignInformation dataUsingEncoding:NSUTF8StringEncoding] error:&error];
+    NSDictionary *result = [NSJSONSerialization JSONObjectWithData:[_campaignInformation dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&error];
     if (error != nil) {
         NSLog(@"ERROR: Deserialization error:%@", error);
     } else if (![result isKindOfClass:[NSDictionary class]]) {
@@ -503,23 +507,24 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
     [apiProperties setValue:[Amplitude replaceWithJSONNull:propertyListMaxId] forKey:@"max_id"];
     
     if (lastKnownLocation != nil) {
-        NSMutableDictionary *location = [NSMutableDictionary dictionary];
-        
-        // Need to use NSInvocation because coordinate selector returns a C struct
-        SEL coordinateSelector = NSSelectorFromString(@"coordinate");
-        NSMethodSignature *coordinateMethodSignature = [lastKnownLocation methodSignatureForSelector:coordinateSelector];
-        NSInvocation *coordinateInvocation = [NSInvocation invocationWithMethodSignature:coordinateMethodSignature];
-        [coordinateInvocation setTarget:lastKnownLocation];
-        [coordinateInvocation setSelector:coordinateSelector];
-        [coordinateInvocation invoke];
-        CLLocationCoordinate2D lastKnownLocationCoordinate;
-        [coordinateInvocation getReturnValue:&lastKnownLocationCoordinate];
-        
-        [location setValue:[Amplitude replaceWithJSONNull:[NSNumber numberWithDouble:lastKnownLocationCoordinate.latitude]] forKey:@"lat"];
-        [location setValue:[Amplitude replaceWithJSONNull:[NSNumber numberWithDouble:lastKnownLocationCoordinate.longitude]] forKey:@"lng"];
-        
-        [apiProperties setValue:location forKey:@"location"];
-        
+        @synchronized (locationManager) {
+            NSMutableDictionary *location = [NSMutableDictionary dictionary];
+            
+            // Need to use NSInvocation because coordinate selector returns a C struct
+            SEL coordinateSelector = NSSelectorFromString(@"coordinate");
+            NSMethodSignature *coordinateMethodSignature = [lastKnownLocation methodSignatureForSelector:coordinateSelector];
+            NSInvocation *coordinateInvocation = [NSInvocation invocationWithMethodSignature:coordinateMethodSignature];
+            [coordinateInvocation setTarget:lastKnownLocation];
+            [coordinateInvocation setSelector:coordinateSelector];
+            [coordinateInvocation invoke];
+            CLLocationCoordinate2D lastKnownLocationCoordinate;
+            [coordinateInvocation getReturnValue:&lastKnownLocationCoordinate];
+            
+            [location setValue:[Amplitude replaceWithJSONNull:[NSNumber numberWithDouble:lastKnownLocationCoordinate.latitude]] forKey:@"lat"];
+            [location setValue:[Amplitude replaceWithJSONNull:[NSNumber numberWithDouble:lastKnownLocationCoordinate.longitude]] forKey:@"lng"];
+            
+            [apiProperties setValue:location forKey:@"location"];
+        }
     }
     
     if (sessionStarted) {
@@ -578,9 +583,9 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
             NSArray *uploadEvents = [events subarrayWithRange:NSMakeRange(0, numEvents)];
             long long lastEventIDUploaded = [[[uploadEvents lastObject] objectForKey:@"event_id"] longLongValue];
             NSError *error = nil;
-            NSData *eventsDataLocal = [[AmplitudeCJSONSerializer serializer] serializeArray:uploadEvents error:&error];
+            NSData *eventsDataLocal = [NSJSONSerialization dataWithJSONObject:uploadEvents options:0 error:&error];
             if (error != nil) {
-                NSLog(@"ERROR: JSONSerializer error: %@", error);
+                NSLog(@"ERROR: NSJSONSerialization error: %@", error);
                 updatingCurrently = NO;
                 return;
             }
@@ -848,10 +853,12 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
 {
     if (locationListeningEnabled) {
         CLLocation *location = [locationManager location];
-        if (location != nil) {
-            (void) SAFE_ARC_RETAIN(location);
-            SAFE_ARC_RELEASE(lastKnownLocation);
-            lastKnownLocation = location;
+        @synchronized (locationManager) {
+            if (location != nil) {
+                (void) SAFE_ARC_RETAIN(location);
+                SAFE_ARC_RELEASE(lastKnownLocation);
+                lastKnownLocation = location;
+            }
         }
     }
 }
@@ -903,8 +910,55 @@ static AmplitudeLocationManagerDelegate *locationManagerDelegate;
 
 + (NSString*)getDeviceId
 {
-    // MD5 Hash of the mac address
-    return [Amplitude md5HexDigest:[Amplitude getMacAddress]];
+    // On iOS 7+, return advertiser ID
+    if ([[[UIDevice currentDevice] systemVersion] floatValue] >= (float) 7.0) {
+        NSString *advertiserId = [Amplitude getAdvertiserID:0];
+        if (advertiserId != nil && ![advertiserId isEqualToString:@"00000000-0000-0000-0000-000000000000"]) {
+            return advertiserId;
+        }
+    }
+    
+    // On iOS 6 and below, md5 hash of the mac address
+    NSString *macAddress = [Amplitude getMacAddress];
+    if (macAddress != nil && ![macAddress isEqualToString:@"020000000000"]) {
+        return [Amplitude md5HexDigest:macAddress];
+    }
+    
+    NSString *randomId = [Amplitude generateRandomId];
+    return randomId;
+}
+
++ (NSString*)getAdvertiserID:(int) timesCalled
+{
+    Class ASIdentifierManager = NSClassFromString(@"ASIdentifierManager");
+    SEL sharedManager = NSSelectorFromString(@"sharedManager");
+    SEL advertisingIdentifier = NSSelectorFromString(@"advertisingIdentifier");
+    SEL UUIDString = NSSelectorFromString(@"UUIDString");
+    if (ASIdentifierManager && sharedManager && advertisingIdentifier && UUIDString) {
+        NSString *identifier = [[[ASIdentifierManager performSelector: sharedManager] performSelector: advertisingIdentifier] performSelector: UUIDString];
+        if (identifier == nil && timesCalled < 5) {
+            // Try again every 5 seconds
+            [NSThread sleepForTimeInterval:5.0];
+            return [Amplitude getAdvertiserID:timesCalled + 1];
+        } else {
+            return identifier;
+        }
+    } else {
+        return nil;
+    }
+}
+
++ (NSString*)generateRandomId
+{
+    CFUUIDRef uuid = CFUUIDCreate(kCFAllocatorDefault);
+#if __has_feature(objc_arc)
+    NSString *uuidStr = (__bridge_transfer NSString *)CFUUIDCreateString(kCFAllocatorDefault, uuid);
+#else
+    NSString *uuidStr = (NSString *) CFUUIDCreateString(kCFAllocatorDefault, uuid);
+#endif
+    CFRelease(uuid);
+    // Add "R" at the end of the ID to distinguish it from advertiserId
+    return [uuidStr stringByAppendingString:@"R"];
 }
 
 + (id)replaceWithJSONNull:(id) obj
