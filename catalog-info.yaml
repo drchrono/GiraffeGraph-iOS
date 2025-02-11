@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: GiraffeGraph-iOS
+  description: Repository for GiraffeGraph-iOS
+  annotations:
+    business-unit: EverHealth
+    github.com/project-slug: drchrono/GiraffeGraph-iOS
+    product: DRC
+spec:
+  type: service
+  lifecycle: production
+  owner: EverHealth
+  implementation:
+    languages:
+    - Objective-C
+    - C
